@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real-Time Behavioral Fingerprint System</title>
+
+    <!-- MediaPipe for pose detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    
+    <!-- Plotly for advanced visualizations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.26.0/plotly.min.js"></script>
+
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a15, #1a1a30);
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            grid-template-rows: 1fr 300px;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .main-panel {
+            position: relative;
+            background: rgba(10, 10, 20, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(100, 120, 255, 0.3);
+            overflow: hidden;
+        }
+
+        .side-panel {
+            background: rgba(10, 10, 20, 0.9);
+            border-radius: 12px;
+            border: 1px solid rgba(100, 120, 255, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .bottom-panel {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        .chart-container {
+            background: rgba(10, 10, 20, 0.9);
+            border-radius: 12px;
+            border: 1px solid rgba(100, 120, 255, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #simulation-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #video-canvas {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            border-radius: 8px;
+            width: 200px;
+            height: 150px;
+            border: 2px solid rgba(100, 120, 255, 0.5);
+            background-color: black;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #88aaff;
+            font-size: 14px;
+        }
+
+        button {
+            background: linear-gradient(to right, #4a5dc7, #6f42c1);
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button.active {
+            background: linear-gradient(to right, #ff6b35, #f7931e);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: rgba(20, 20, 40, 0.6);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #88aaff;
+        }
+
+        .joint-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(20, 20, 40, 0.4);
+            border-radius: 6px;
+            padding: 10px;
+        }
+
+        .joint-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .panel {
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            width: 90%;
+            text-align: center;
+            border: 1px solid rgba(100, 120, 255, 0.6);
+        }
+
+        .start-button {
+            background: linear-gradient(to right, #4a5dc7, #6f42c1);
+            border: none;
+            border-radius: 30px;
+            padding: 14px 36px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .chart-title {
+            position: absolute;
+            top: 10px;
+            left: 15px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #88aaff;
+            z-index: 10;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Main visualization panel -->
+        <div class="main-panel">
+            <canvas id="simulation-canvas"></canvas>
+            <canvas id="video-canvas"></canvas>
+            <div class="chart-title">Live Movement Tracking</div>
+        </div>
+
+        <!-- Control and stats panel -->
+        <div class="side-panel">
+            <div class="controls">
+                <div class="control-group">
+                    <button id="start-recording" class="active">Start Recording</button>
+                    <button id="pause-recording">Pause</button>
+                    <button id="save-fingerprint">Save Fingerprint</button>
+                </div>
+                
+                <div class="control-group">
+                    <label>Analysis Window:</label>
+                    <button id="window-10s">10s</button>
+                    <button id="window-30s" class="active">30s</button>
+                    <button id="window-60s">60s</button>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div>Active Joints</div>
+                    <div class="stat-value" id="active-joints">0</div>
+                </div>
+                <div class="stat-item">
+                    <div>Avg Movement</div>
+                    <div class="stat-value" id="avg-movement">0.0</div>
+                </div>
+                <div class="stat-item">
+                    <div>Dominant Freq</div>
+                    <div class="stat-value" id="dominant-freq">0.0 Hz</div>
+                </div>
+                <div class="stat-item">
+                    <div>Sync Score</div>
+                    <div class="stat-value" id="sync-score">0%</div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Top Active Joints:</label>
+                <div class="joint-list" id="joint-list"></div>
+            </div>
+        </div>
+
+        <!-- Bottom charts -->
+        <div class="bottom-panel">
+            <div class="chart-container">
+                <div class="chart-title">Movement Correlation Matrix</div>
+                <div id="correlation-chart"></div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Frequency Spectrum</div>
+                <div id="frequency-chart"></div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Movement Flow States</div>
+                <div id="flow-chart"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Welcome overlay -->
+    <div class="overlay" id="welcome-overlay">
+        <div class="panel">
+            <h1>🧬 Behavioral Fingerprint System</h1>
+            <p>Real-time analysis of your movement patterns, correlations, and behavioral signatures. Your unique movement fingerprint will be visualized as you move.</p>
+            <button class="start-button" id="start-button">Begin Analysis</button>
+        </div>
+    </div>
+
+    <script>
+        /* ----- CONFIGURATION ----- */
+        const videoWidth = 200, videoHeight = 150;
+        const JOINT_NAMES = [
+            'nose', 'left_eye_inner', 'left_eye', 'left_eye_outer', 'right_eye_inner', 'right_eye', 'right_eye_outer',
+            'left_ear', 'right_ear', 'mouth_left', 'mouth_right', 'left_shoulder', 'right_shoulder',
+            'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist', 'left_pinky', 'right_pinky',
+            'left_index', 'right_index', 'left_thumb', 'right_thumb', 'left_hip', 'right_hip',
+            'left_knee', 'right_knee', 'left_ankle', 'right_ankle', 'left_heel', 'right_heel',
+            'left_foot_index', 'right_foot_index'
+        ];
+
+        /* ----- DOM ELEMENTS ----- */
+        const videoCanvas = document.getElementById('video-canvas');
+        const simCanvas = document.getElementById('simulation-canvas');
+        const videoCtx = videoCanvas.getContext('2d');
+        const simCtx = simCanvas.getContext('2d');
+
+        /* ----- GLOBAL STATE ----- */
+        let isRecording = false;
+        let analysisWindow = 30000; // 30 seconds in milliseconds
+        let poseDetector;
+        let behavioralFingerprint = {
+            joints: {},
+            correlationMatrix: null,
+            frequencyData: {},
+            flowStates: [],
+            startTime: Date.now()
+        };
+
+        /* ----- BEHAVIORAL JOINT CLASS ----- */
+        class BehavioralJoint {
+            constructor(index, name) {
+                this.index = index;
+                this.name = name;
+                this.positions = [];
+                this.velocities = [];
+                this.accelerations = [];
+                this.energy = 0;
+                this.dominantFreq = 0;
+                this.lastPos = null;
+                this.lastVel = null;
+                // Remove tendrils and state - we just want clean tracking
+            }
+
+            update(landmark, timestamp) {
+                if (!landmark || landmark.visibility < 0.5) return;
+
+                const pos = {
+                    x: landmark.x * simCanvas.width,
+                    y: landmark.y * simCanvas.height,
+                    timestamp: timestamp
+                };
+
+                this.positions.push(pos);
+
+                if (this.lastPos) {
+                    const dt = (timestamp - this.lastPos.timestamp) / 1000; // Convert to seconds
+                    const vel = {
+                        x: (pos.x - this.lastPos.x) / dt,
+                        y: (pos.y - this.lastPos.y) / dt,
+                        timestamp: timestamp
+                    };
+                    this.velocities.push(vel);
+                    this.energy = Math.hypot(vel.x, vel.y);
+
+                    if (this.lastVel) {
+                        const acc = {
+                            x: (vel.x - this.lastVel.x) / dt,
+                            y: (vel.y - this.lastVel.y) / dt,
+                            timestamp: timestamp
+                        };
+                        this.accelerations.push(acc);
+                    }
+                    this.lastVel = vel;
+                }
+
+                this.lastPos = pos;
+                this.cleanup(timestamp);
+                this.calculateFrequencies();
+            }
+
+            cleanup(currentTime) {
+                const cutoff = currentTime - analysisWindow;
+                this.positions = this.positions.filter(p => p.timestamp > cutoff);
+                this.velocities = this.velocities.filter(v => v.timestamp > cutoff);
+                this.accelerations = this.accelerations.filter(a => a.timestamp > cutoff);
+            }
+
+            calculateFrequencies() {
+                if (this.positions.length < 10) return;
+
+                // Simple frequency analysis using zero crossings
+                const xPositions = this.positions.map(p => p.x);
+                const yPositions = this.positions.map(p => p.y);
+
+                this.dominantFreq = this.calculateDominantFrequency(xPositions, yPositions);
+            }
+
+            calculateDominantFrequency(xData, yData) {
+                // Calculate zero crossings for rough frequency estimation
+                const xCrossings = this.countZeroCrossings(xData);
+                const yCrossings = this.countZeroCrossings(yData);
+                
+                const duration = (this.positions[this.positions.length - 1].timestamp - this.positions[0].timestamp) / 1000;
+                if (duration <= 0) return 0;
+                
+                return ((xCrossings + yCrossings) / 2) / (2 * duration); // Approximate frequency in Hz
+            }
+
+            countZeroCrossings(data) {
+                if (data.length < 2) return 0;
+                const mean = data.reduce((a, b) => a + b, 0) / data.length;
+                const centered = data.map(x => x - mean);
+                
+                let crossings = 0;
+                for (let i = 1; i < centered.length; i++) {
+                    if ((centered[i-1] >= 0 && centered[i] < 0) || (centered[i-1] < 0 && centered[i] >= 0)) {
+                        crossings++;
+                    }
+                }
+                return crossings;
+            }
+
+            draw(ctx) {
+                if (!this.lastPos) return;
+
+                // Ultra-clean joint visualization - NO movement effects at all
+                let color, radius;
+                
+                // Fixed colors and sizes - no dynamic effects
+                if (this.name.includes('eye') || this.name.includes('ear') || this.name === 'nose') {
+                    color = `rgba(100, 150, 255, 0.9)`;
+                    radius = 3;
+                } else if (this.name.includes('hand') || this.name.includes('wrist') || this.name.includes('thumb') || this.name.includes('pinky') || this.name.includes('index')) {
+                    color = `rgba(255, 150, 100, 0.9)`;
+                    radius = 4;
+                } else if (this.name.includes('shoulder') || this.name.includes('elbow')) {
+                    color = `rgba(150, 255, 150, 0.9)`;
+                    radius = 5;
+                } else if (this.name.includes('hip') || this.name.includes('knee') || this.name.includes('ankle') || this.name.includes('foot') || this.name.includes('heel')) {
+                    color = `rgba(255, 200, 100, 0.9)`;
+                    radius = 4;
+                } else {
+                    color = `rgba(200, 200, 200, 0.9)`;
+                    radius = 3;
+                }
+
+                // Just draw a clean dot - nothing else
+                ctx.beginPath();
+                ctx.arc(this.lastPos.x, this.lastPos.y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                // NO trajectories, NO trails, NO movement effects - pure tracking dots only
+            }
+        }
+
+        /* ----- BEHAVIORAL SYSTEM ----- */
+        class BehavioralSystem {
+            constructor() {
+                this.joints = {};
+                this.correlationMatrix = [];
+                this.lastCorrelationUpdate = 0;
+            }
+
+            update(landmarks, timestamp) {
+                if (!landmarks) return;
+
+                // Update or create joints
+                landmarks.forEach((landmark, index) => {
+                    if (!this.joints[index]) {
+                        this.joints[index] = new BehavioralJoint(index, JOINT_NAMES[index] || `Joint_${index}`);
+                    }
+                    this.joints[index].update(landmark, timestamp);
+                });
+
+                // Update correlation matrix periodically
+                if (timestamp - this.lastCorrelationUpdate > 1000) { // Every second
+                    this.updateCorrelationMatrix();
+                    this.lastCorrelationUpdate = timestamp;
+                }
+            }
+
+            updateCorrelationMatrix() {
+                const activeJoints = Object.values(this.joints).filter(j => j.positions.length > 5);
+                if (activeJoints.length < 2) {
+                    this.correlationMatrix = null;
+                    return;
+                }
+
+                const matrix = [];
+                const jointNames = [];
+
+                try {
+                    for (let i = 0; i < activeJoints.length; i++) {
+                        matrix[i] = [];
+                        jointNames[i] = activeJoints[i].name;
+                        
+                        for (let j = 0; j < activeJoints.length; j++) {
+                            if (i === j) {
+                                matrix[i][j] = 1.0;
+                            } else {
+                                matrix[i][j] = this.calculateCorrelation(activeJoints[i], activeJoints[j]);
+                            }
+                        }
+                    }
+
+                    this.correlationMatrix = { matrix, jointNames };
+                } catch (error) {
+                    console.log('Correlation matrix calculation error:', error);
+                    this.correlationMatrix = null;
+                }
+            }
+
+            calculateCorrelation(joint1, joint2) {
+                const minLength = Math.min(joint1.positions.length, joint2.positions.length);
+                if (minLength < 5) return 0;
+
+                const pos1 = joint1.positions.slice(-minLength);
+                const pos2 = joint2.positions.slice(-minLength);
+
+                // Calculate correlation between movement energies
+                const energy1 = pos1.map((p, i) => i > 0 ? Math.hypot(p.x - pos1[i-1].x, p.y - pos1[i-1].y) : 0).slice(1);
+                const energy2 = pos2.map((p, i) => i > 0 ? Math.hypot(p.x - pos2[i-1].x, p.y - pos2[i-1].y) : 0).slice(1);
+
+                return this.pearsonCorrelation(energy1, energy2);
+            }
+
+            pearsonCorrelation(x, y) {
+                const n = Math.min(x.length, y.length);
+                if (n < 2) return 0;
+
+                const sumX = x.reduce((a, b) => a + b, 0);
+                const sumY = y.reduce((a, b) => a + b, 0);
+                const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+                const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+                const sumYY = y.reduce((sum, yi) => sum + yi * yi, 0);
+
+                const numerator = n * sumXY - sumX * sumY;
+                const denominator = Math.sqrt((n * sumXX - sumX * sumX) * (n * sumYY - sumY * sumY));
+
+                return denominator === 0 ? 0 : numerator / denominator;
+            }
+
+            getActiveJoints() {
+                return Object.values(this.joints)
+                    .filter(j => j.positions.length > 0)
+                    .sort((a, b) => b.energy - a.energy);
+            }
+
+            getStats() {
+                const activeJoints = this.getActiveJoints();
+                const avgMovement = activeJoints.length > 0 ? 
+                    activeJoints.reduce((sum, j) => sum + j.energy, 0) / activeJoints.length : 0;
+                
+                const dominantFreq = activeJoints.length > 0 ? 
+                    activeJoints.reduce((sum, j) => sum + j.dominantFreq, 0) / activeJoints.length : 0;
+
+                return {
+                    activeJoints: activeJoints.length,
+                    avgMovement: avgMovement.toFixed(1),
+                    dominantFreq: dominantFreq.toFixed(2),
+                    syncScore: this.calculateSyncScore()
+                };
+            }
+
+            calculateSyncScore() {
+                if (!this.correlationMatrix || !this.correlationMatrix.matrix || this.correlationMatrix.matrix.length < 2) return 0;
+                
+                let sum = 0, count = 0;
+                for (let i = 0; i < this.correlationMatrix.matrix.length; i++) {
+                    if (!this.correlationMatrix.matrix[i]) continue;
+                    for (let j = i + 1; j < this.correlationMatrix.matrix[i].length; j++) {
+                        sum += Math.abs(this.correlationMatrix.matrix[i][j] || 0);
+                        count++;
+                    }
+                }
+                
+                return count > 0 ? Math.round((sum / count) * 100) : 0;
+            }
+        }
+
+        /* ----- VISUALIZATION FUNCTIONS ----- */
+        function updateCorrelationChart(correlationData) {
+            if (!correlationData || !correlationData.matrix || correlationData.matrix.length === 0) {
+                // Display empty state
+                const data = [{
+                    z: [[0]],
+                    x: ['No Data'],
+                    y: ['No Data'],
+                    type: 'heatmap',
+                    colorscale: 'RdBu',
+                    zmid: 0,
+                    showscale: false
+                }];
+
+                const layout = {
+                    margin: { t: 20, r: 20, b: 60, l: 60 },
+                    font: { color: 'white', size: 10 },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    xaxis: { tickangle: 45 },
+                    yaxis: { autorange: 'reversed' }
+                };
+
+                Plotly.newPlot('correlation-chart', data, layout, { displayModeBar: false, responsive: true });
+                return;
+            }
+
+            const data = [{
+                z: correlationData.matrix,
+                x: correlationData.jointNames,
+                y: correlationData.jointNames,
+                type: 'heatmap',
+                colorscale: 'RdBu',
+                zmid: 0,
+                showscale: false
+            }];
+
+            const layout = {
+                margin: { t: 20, r: 20, b: 60, l: 60 },
+                font: { color: 'white', size: 10 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                xaxis: { tickangle: 45 },
+                yaxis: { autorange: 'reversed' }
+            };
+
+            Plotly.newPlot('correlation-chart', data, layout, { displayModeBar: false, responsive: true });
+        }
+
+        function updateFrequencyChart(joints) {
+            if (!joints || joints.length === 0) {
+                // Show empty state
+                const data = [{
+                    x: ['No Active Joints'],
+                    y: [0],
+                    type: 'bar',
+                    marker: { color: 'rgba(100,120,255,0.3)' }
+                }];
+
+                const layout = {
+                    margin: { t: 20, r: 20, b: 80, l: 40 },
+                    font: { color: 'white', size: 10 },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    xaxis: { tickangle: 45, color: 'white' },
+                    yaxis: { title: 'Hz', color: 'white' }
+                };
+
+                Plotly.newPlot('frequency-chart', data, layout, { displayModeBar: false, responsive: true });
+                return;
+            }
+
+            const activeJoints = joints.slice(0, 10); // Top 10 most active joints
+            
+            // Use stable colors based on body regions
+            const colors = activeJoints.map(j => {
+                if (j.name.includes('eye') || j.name.includes('ear') || j.name === 'nose') return 'rgba(100, 150, 255, 0.8)';
+                if (j.name.includes('hand') || j.name.includes('wrist') || j.name.includes('thumb') || j.name.includes('pinky') || j.name.includes('index')) return 'rgba(255, 150, 100, 0.8)';
+                if (j.name.includes('shoulder') || j.name.includes('elbow')) return 'rgba(150, 255, 150, 0.8)';
+                if (j.name.includes('hip') || j.name.includes('knee') || j.name.includes('ankle') || j.name.includes('foot') || j.name.includes('heel')) return 'rgba(255, 200, 100, 0.8)';
+                return 'rgba(200, 200, 200, 0.8)';
+            });
+            
+            const data = [{
+                x: activeJoints.map(j => j.name),
+                y: activeJoints.map(j => j.dominantFreq),
+                type: 'bar',
+                marker: { 
+                    color: colors,
+                    opacity: 0.8
+                }
+            }];
+
+            const layout = {
+                margin: { t: 20, r: 20, b: 80, l: 40 },
+                font: { color: 'white', size: 10 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                xaxis: { tickangle: 45, color: 'white' },
+                yaxis: { title: 'Hz', color: 'white' }
+            };
+
+            Plotly.newPlot('frequency-chart', data, layout, { displayModeBar: false, responsive: true });
+        }
+
+        function updateFlowChart(joints) {
+            if (!joints || joints.length < 2) {
+                // Show empty state
+                const data = [{
+                    type: "sankey",
+                    node: {
+                        pad: 15,
+                        thickness: 20,
+                        line: { color: "rgba(255,255,255,0.2)", width: 0.5 },
+                        label: ['No Flow Data'],
+                        color: ['rgba(100,120,255,0.3)']
+                    },
+                    link: {
+                        source: [],
+                        target: [],
+                        value: []
+                    }
+                }];
+
+                const layout = {
+                    margin: { t: 20, r: 20, b: 20, l: 20 },
+                    font: { color: 'white', size: 10 },
+                    paper_bgcolor: 'rgba(0,0,0,0)'
+                };
+
+                Plotly.newPlot('flow-chart', data, layout, { displayModeBar: false, responsive: true });
+                return;
+            }
+
+            // Create a simple flow visualization based on energy levels and states
+            const activeJoints = joints.slice(0, 8);
+
+            // Create nodes with stable colors
+            const nodeLabels = activeJoints.map(j => j.name);
+            const nodeColors = activeJoints.map(j => {
+                if (j.name.includes('eye') || j.name.includes('ear') || j.name === 'nose') return 'rgba(100, 150, 255, 0.8)';
+                if (j.name.includes('hand') || j.name.includes('wrist') || j.name.includes('thumb') || j.name.includes('pinky') || j.name.includes('index')) return 'rgba(255, 150, 100, 0.8)';
+                if (j.name.includes('shoulder') || j.name.includes('elbow')) return 'rgba(150, 255, 150, 0.8)';
+                if (j.name.includes('hip') || j.name.includes('knee') || j.name.includes('ankle') || j.name.includes('foot') || j.name.includes('heel')) return 'rgba(255, 200, 100, 0.8)';
+                return 'rgba(200, 200, 200, 0.8)';
+            });
+            
+            // Create links based on energy similarity
+            const source = [], target = [], value = [], linkColors = [];
+            for (let i = 0; i < activeJoints.length; i++) {
+                for (let j = i + 1; j < activeJoints.length; j++) {
+                    const energyDiff = Math.abs(activeJoints[i].energy - activeJoints[j].energy);
+                    if (energyDiff < 30) { // Similar energy levels
+                        source.push(i);
+                        target.push(j);
+                        value.push(Math.max(1, 30 - energyDiff));
+                        linkColors.push('rgba(150, 150, 255, 0.4)'); // Stable link color
+                    }
+                }
+            }
+
+            const data = [{
+                type: "sankey",
+                node: {
+                    pad: 15,
+                    thickness: 20,
+                    line: { color: "rgba(255,255,255,0.2)", width: 0.5 },
+                    label: nodeLabels,
+                    color: nodeColors
+                },
+                link: {
+                    source: source,
+                    target: target,
+                    value: value,
+                    color: linkColors
+                }
+            }];
+
+            const layout = {
+                margin: { t: 20, r: 20, b: 20, l: 20 },
+                font: { color: 'white', size: 10 },
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            };
+
+            Plotly.newPlot('flow-chart', data, layout, { displayModeBar: false, responsive: true });
+        }
+
+        /* ----- MAIN SYSTEM ----- */
+        const behavioralSystem = new BehavioralSystem();
+
+        function handleResize() {
+            simCanvas.width = simCanvas.parentElement.clientWidth;
+            simCanvas.height = simCanvas.parentElement.clientHeight;
+            videoCanvas.width = videoWidth;
+            videoCanvas.height = videoHeight;
+        }
+
+        function draw(results) {
+            simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
+            videoCtx.clearRect(0, 0, videoCanvas.width, videoCanvas.height);
+
+            if (results.image) {
+                videoCtx.drawImage(results.image, 0, 0, videoCanvas.width, videoCanvas.height);
+            }
+
+            if (results.poseLandmarks && isRecording) {
+                try {
+                    const timestamp = Date.now();
+                    behavioralSystem.update(results.poseLandmarks, timestamp);
+
+                    // Draw clean skeleton connections - no fancy effects
+                    if (window.drawConnectors) {
+                        const scaledLandmarks = results.poseLandmarks.map(lm => ({
+                            x: lm.x * simCanvas.width,
+                            y: lm.y * simCanvas.height,
+                            visibility: lm.visibility
+                        }));
+                        window.drawConnectors(simCtx, scaledLandmarks, window.POSE_CONNECTIONS, 
+                            { color: 'rgba(255, 255, 255, 0.2)', lineWidth: 1 });
+                    }
+
+                    // Draw clean behavioral joints - focus on data not visuals
+                    Object.values(behavioralSystem.joints).forEach(joint => {
+                        if (results.poseLandmarks[joint.index] && results.poseLandmarks[joint.index].visibility > 0.5) {
+                            joint.draw(simCtx);
+                        }
+                    });
+
+                    // Update UI with error handling
+                    updateStats();
+                } catch (error) {
+                    console.log('Draw error:', error);
+                }
+            }
+        }
+
+        function updateStats() {
+            try {
+                const stats = behavioralSystem.getStats();
+                const activeJoints = behavioralSystem.getActiveJoints();
+
+                document.getElementById('active-joints').textContent = stats.activeJoints;
+                document.getElementById('avg-movement').textContent = stats.avgMovement;
+                document.getElementById('dominant-freq').textContent = stats.dominantFreq + ' Hz';
+                document.getElementById('sync-score').textContent = stats.syncScore + '%';
+
+                // Update joint list
+                const jointList = document.getElementById('joint-list');
+                jointList.innerHTML = '';
+                activeJoints.slice(0, 8).forEach(joint => {
+                    const item = document.createElement('div');
+                    item.className = 'joint-item';
+                    item.innerHTML = `
+                        <span>${joint.name}</span>
+                        <span>${joint.energy.toFixed(1)} | ${joint.dominantFreq.toFixed(1)}Hz</span>
+                    `;
+                    jointList.appendChild(item);
+                });
+
+                // Update charts less frequently to reduce load
+                if (Math.random() < 0.1) { // 10% chance each update
+                    updateCharts();
+                }
+            } catch (error) {
+                console.log('Stats update error:', error);
+            }
+        }
+
+        function updateCharts() {
+            try {
+                // Only update if we have valid correlation data
+                if (behavioralSystem.correlationMatrix && 
+                    behavioralSystem.correlationMatrix.matrix && 
+                    Array.isArray(behavioralSystem.correlationMatrix.matrix) &&
+                    behavioralSystem.correlationMatrix.matrix.length > 0) {
+                    updateCorrelationChart(behavioralSystem.correlationMatrix);
+                } else {
+                    updateCorrelationChart(null); // Show empty state
+                }
+                
+                const activeJoints = behavioralSystem.getActiveJoints();
+                updateFrequencyChart(activeJoints);
+                updateFlowChart(activeJoints);
+            } catch (error) {
+                console.log('Chart update error:', error);
+                // Initialize empty charts on error
+                setTimeout(() => {
+                    updateCorrelationChart(null);
+                    updateFrequencyChart([]);
+                    updateFlowChart([]);
+                }, 100);
+            }
+        }
+
+        function saveBehavioralFingerprint() {
+            const fingerprint = {
+                timestamp: new Date().toISOString(),
+                duration: Date.now() - behavioralSystem.startTime,
+                correlationMatrix: behavioralSystem.correlationMatrix,
+                joints: Object.values(behavioralSystem.joints).map(joint => ({
+                    name: joint.name,
+                    energy: joint.energy,
+                    dominantFreq: joint.dominantFreq,
+                    positionCount: joint.positions.length
+                })),
+                stats: behavioralSystem.getStats()
+            };
+
+            const blob = new Blob([JSON.stringify(fingerprint, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `behavioral_fingerprint_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        /* ----- EVENT HANDLERS ----- */
+        document.getElementById('start-recording').addEventListener('click', function() {
+            isRecording = true;
+            this.classList.add('active');
+            document.getElementById('pause-recording').classList.remove('active');
+        });
+
+        document.getElementById('pause-recording').addEventListener('click', function() {
+            isRecording = false;
+            this.classList.add('active');
+            document.getElementById('start-recording').classList.remove('active');
+        });
+
+        document.getElementById('save-fingerprint').addEventListener('click', saveBehavioralFingerprint);
+
+        // Window size buttons
+        document.getElementById('window-30s').addEventListener('click', function() {
+            analysisWindow = 30000;
+            document.querySelectorAll('[id^="window-"]').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+        });
+
+        document.getElementById('window-60s').addEventListener('click', function() {
+            analysisWindow = 60000;
+            document.querySelectorAll('[id^="window-"]').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+        });
+
+        /* ----- MEDIAPIPE SETUP ----- */
+        function onPoseResults(results) {
+            draw(results);
+        }
+
+        async function startApp() {
+            document.getElementById('welcome-overlay').style.display = 'none';
+
+            poseDetector = new window.Pose({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+            });
+
+            poseDetector.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            poseDetector.onResults(onPoseResults);
+
+            const camera = new window.Camera(document.createElement('video'), {
+                onFrame: async () => {
+                    await poseDetector.send({ image: camera.video });
+                },
+                width: 640,
+                height: 480
+            });
+            
+            await camera.start();
+            
+            // Initialize chart containers
+            handleResize();
+            window.addEventListener('resize', handleResize);
+            
+            // Start with recording enabled
+            isRecording = true;
+        }
+
+        document.getElementById('start-button').addEventListener('click', startApp);
+
+        /* ----- ADVANCED ANALYSIS FUNCTIONS ----- */
+        
+        // Periodic analysis updates with better error handling
+        setInterval(() => {
+            if (isRecording && Object.keys(behavioralSystem.joints).length > 0) {
+                try {
+                    updateCharts();
+                    
+                    // Auto-save fingerprint every 5 minutes
+                    const now = Date.now();
+                    if (now - behavioralSystem.startTime > 300000) { // 5 minutes
+                        console.log('Auto-saving behavioral fingerprint...');
+                        saveBehavioralFingerprint();
+                        behavioralSystem.startTime = now; // Reset timer
+                    }
+                } catch (error) {
+                    console.log('Periodic update error:', error);
+                }
+            }
+        }, 2000); // Update every 2 seconds
+
+        // Enhanced correlation analysis
+        function calculateAdvancedCorrelations() {
+            const activeJoints = Object.values(behavioralSystem.joints).filter(j => j.positions.length > 10);
+            if (activeJoints.length < 3) return;
+
+            // Calculate cross-correlations with time lags
+            const crossCorrelations = {};
+            for (let i = 0; i < activeJoints.length; i++) {
+                for (let j = i + 1; j < activeJoints.length; j++) {
+                    const joint1 = activeJoints[i];
+                    const joint2 = activeJoints[j];
+                    const correlation = calculateTimeDelayedCorrelation(joint1, joint2);
+                    crossCorrelations[`${joint1.name}-${joint2.name}`] = correlation;
+                }
+            }
+
+            return crossCorrelations;
+        }
+
+        function calculateTimeDelayedCorrelation(joint1, joint2, maxLag = 10) {
+            const minLength = Math.min(joint1.positions.length, joint2.positions.length);
+            if (minLength < maxLag * 2) return { correlation: 0, lag: 0 };
+
+            const energy1 = joint1.positions.map((p, i) => i > 0 ? 
+                Math.hypot(p.x - joint1.positions[i-1].x, p.y - joint1.positions[i-1].y) : 0).slice(1);
+            const energy2 = joint2.positions.map((p, i) => i > 0 ? 
+                Math.hypot(p.x - joint2.positions[i-1].x, p.y - joint2.positions[i-1].y) : 0).slice(1);
+
+            let bestCorrelation = 0;
+            let bestLag = 0;
+
+            for (let lag = -maxLag; lag <= maxLag; lag++) {
+                let correlation;
+                if (lag >= 0) {
+                    correlation = behavioralSystem.pearsonCorrelation(
+                        energy1.slice(lag), 
+                        energy2.slice(0, energy2.length - lag)
+                    );
+                } else {
+                    correlation = behavioralSystem.pearsonCorrelation(
+                        energy1.slice(0, energy1.length + lag), 
+                        energy2.slice(-lag)
+                    );
+                }
+
+                if (Math.abs(correlation) > Math.abs(bestCorrelation)) {
+                    bestCorrelation = correlation;
+                    bestLag = lag;
+                }
+            }
+
+            return { correlation: bestCorrelation, lag: bestLag };
+        }
+
+        // Behavioral pattern recognition
+        function identifyMovementPatterns() {
+            const activeJoints = behavioralSystem.getActiveJoints();
+            const patterns = {
+                rhythmic: [],
+                chaotic: [],
+                synchronized: [],
+                isolated: []
+            };
+
+            activeJoints.forEach(joint => {
+                const cv = joint.positions.length > 5 ? 
+                    calculateCoefficientOfVariation(joint.positions.map(p => 
+                        Math.hypot(p.x - joint.positions[0].x, p.y - joint.positions[0].y))) : 0;
+
+                if (joint.dominantFreq > 0.5 && cv < 0.5) {
+                    patterns.rhythmic.push(joint);
+                } else if (cv > 1.0) {
+                    patterns.chaotic.push(joint);
+                } else if (joint.energy > 10) {
+                    patterns.synchronized.push(joint);
+                } else {
+                    patterns.isolated.push(joint);
+                }
+            });
+
+            return patterns;
+        }
+
+        function calculateCoefficientOfVariation(data) {
+            if (data.length === 0) return 0;
+            const mean = data.reduce((a, b) => a + b, 0) / data.length;
+            const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / data.length;
+            const stdDev = Math.sqrt(variance);
+            return mean === 0 ? 0 : stdDev / mean;
+        }
+
+        // Enhanced frequency analysis using FFT approximation
+        function approximateFFT(signal) {
+            if (signal.length < 8) return [];
+            
+            // Simple power spectrum approximation
+            const spectrum = [];
+            const N = signal.length;
+            
+            for (let k = 0; k < N/2; k++) {
+                let real = 0, imag = 0;
+                for (let n = 0; n < N; n++) {
+                    const angle = -2 * Math.PI * k * n / N;
+                    real += signal[n] * Math.cos(angle);
+                    imag += signal[n] * Math.sin(angle);
+                }
+                spectrum.push(Math.sqrt(real * real + imag * imag));
+            }
+            
+            return spectrum;
+        }
+
+        // Real-time behavioral state classification
+        function classifyBehavioralState() {
+            const activeJoints = behavioralSystem.getActiveJoints();
+            if (activeJoints.length === 0) return 'idle';
+
+            const totalEnergy = activeJoints.reduce((sum, j) => sum + j.energy, 0);
+            const avgFrequency = activeJoints.reduce((sum, j) => sum + j.dominantFreq, 0) / activeJoints.length;
+            const energyVariance = calculateCoefficientOfVariation(activeJoints.map(j => j.energy));
+
+            if (totalEnergy < 10) return 'still';
+            if (avgFrequency > 2.0 && energyVariance < 0.3) return 'rhythmic';
+            if (totalEnergy > 100 && energyVariance > 0.8) return 'dynamic';
+            if (avgFrequency < 0.5 && totalEnergy > 20) return 'flowing';
+            
+            return 'active';
+        }
+
+        // Add behavioral state to HUD
+        setInterval(() => {
+            if (isRecording) {
+                const state = classifyBehavioralState();
+                const patterns = identifyMovementPatterns();
+                
+                // You could add this to the UI if desired
+                console.log('Current behavioral state:', state);
+                console.log('Movement patterns:', Object.keys(patterns).map(k => 
+                    `${k}: ${patterns[k].length}`).join(', '));
+            }
+        }, 3000);
+
+        /* ----- INITIALIZATION ----- */
+        
+        // Initialize empty charts with proper error handling
+        setTimeout(() => {
+            try {
+                updateCorrelationChart(null);
+                updateFrequencyChart([]);
+                updateFlowChart([]);
+            } catch (error) {
+                console.log('Chart initialization delayed, will retry when data is available');
+            }
+        }, 100);
+
+    </script>
+</body>
+
+</html>10s').addEventListener('click', function() {
+            analysisWindow = 10000;
+            document.querySelectorAll('[id^="window-"]').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+        });
+
+        document.getElementById('window-
