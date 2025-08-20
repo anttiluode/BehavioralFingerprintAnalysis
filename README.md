@@ -74,7 +74,9 @@ bash# Install dependencies
 pip install numpy torch gradio plotly mne scikit-learn
 
 # Run the analyzer
+
 python brain_arch_analysis.py
+
 Data Integration Opportunities
 Synchronized Data Collection
 To enable cross-modal analysis:
