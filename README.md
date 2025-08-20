@@ -1,5 +1,9 @@
 # Behavioral and Neural Fingerprinting System
 
+A video about these systems and how you can develop them further to do medical science. 
+
+https://youtu.be/XaLjDm5Ujwk
+
 A dual-stream analysis platform for real-time behavioral pattern recognition and neural architecture analysis, 
 designed to reveal the deep connections between movement and cognition.
 Overview
